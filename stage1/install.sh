@@ -560,6 +560,8 @@ visudo -cq
 G=/etc/default/grub
 sed -i -E 's/^#?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/; s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=2/' "$G"
 grep -q '^GRUB_DISABLE_OS_PROBER=false' "$G" || echo 'GRUB_DISABLE_OS_PROBER=false' >>"$G"
+# The main kernel boots by default; the backup (LTS) kernel stays one menu entry away.
+grep -q '^GRUB_TOP_LEVEL=' "$G" || echo 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux"' >>"$G"
 if [[ -n $LUKS ]]; then
     sed -i -E "s|^GRUB_CMDLINE_LINUX=\"(.*)\"|GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=$LUKS:root:allow-discards\"|" "$G"
 fi
@@ -632,7 +634,8 @@ install -d "$H/.config/hypr"
 cat >"$H/.config/hypr/hyprland.lua" <<EOF
 -- arch-setup: temporary first-login config. The setup window below installs the real
 -- desktop (Caelestia), which replaces this file. SUPER+Q opens a terminal if needed.
-hl.config({ input = { kb_layout = "$XKB_LAYOUT", kb_variant = "$XKB_VARIANT" } })
+hl.config({ input = { kb_layout = "$XKB_LAYOUT", kb_variant = "$XKB_VARIANT" },
+            ecosystem = { no_update_news = true, no_donation_nag = true } })
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 hl.bind("SUPER + Q", hl.dsp.exec_cmd("foot"))
 hl.on("hyprland.start", function()

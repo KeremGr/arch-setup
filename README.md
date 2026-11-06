@@ -31,15 +31,16 @@ questions, and never touches a disk you didn't name.
 
 1. Download the [Arch ISO](https://archlinux.org/download/), verify it as described there,
    write it to a USB stick and boot from it.
-2. Connect to the internet. Ethernet works by itself; for Wi-Fi run `iwctl`, then
-   `station wlan0 connect YOUR-WIFI`.
+2. Not a US keyboard? Set yours first, so symbols like `|` `"` `{` type correctly, for example
+   `loadkeys trq` (Turkish Q), `loadkeys de` or `loadkeys uk`. Then connect to the internet.
+   Ethernet works by itself; for Wi-Fi run `iwctl`, then `station wlan0 connect YOUR-WIFI`.
 3. Type the install command. It downloads the latest release and runs it **only if** it was
    signed by the project key `60E5 ED45 939B 671B F4DC 8EA6 3910 1B81 A306 0755`
    (Zhanius). If someone shared this project with you, check that fingerprint with them
    directly: that protects you even if this page were ever tampered with.
 
    ```
-   F=60E5ED45939B671BF4DC8EA639101B81A3060755;curl -fL --remote-name-all https://github.com/KeremGr/arch-setup/releases/latest/download/{a.tgz,a.tgz.sig,k.asc}&&gpg --import k.asc&&gpg --status-fd 1 --verify a.tgz.sig|grep -q "VALIDSIG.* $F$"&&tar xf a.tgz&&bash a/stage1/install.sh
+   curl -fLOOO https://github.com/KeremGr/arch-setup/releases/latest/download/{a.tgz,a.sig,k}&&gpgv --status-fd 1 --keyring ./k a.sig a.tgz|grep -q "VALIDSIG.* 60E5ED45939B671BF4DC8EA639101B81A3060755$"&&tar xf a.tgz&&bash a/i
    ```
 
    It's long. To paste it from another computer instead: on the ISO run `passwd` (set a

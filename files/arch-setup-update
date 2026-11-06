@@ -22,9 +22,9 @@ STATE=${XDG_STATE_HOME:-$HOME/.local/state}/arch-setup; mkdir -p "$STATE"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 section "Checking for a new reviewed version"
-for f in a.tgz a.tgz.sig; do
-    curl -fsSL --proto "$PROTO" --retry 3 -o "$TMP/$f" "$BASE/$f" || die "Download failed ($f). Online?"
-done
+curl -fsSL --proto "$PROTO" --retry 3 -o "$TMP/a.tgz" "$BASE/a.tgz" || die "Download failed. Online?"
+curl -fsSL --proto "$PROTO" --retry 3 -o "$TMP/a.tgz.sig" "$BASE/a.sig" \
+    || curl -fsSL --proto "$PROTO" --retry 3 -o "$TMP/a.tgz.sig" "$BASE/a.tgz.sig" || die "Signature download failed"
 export GNUPGHOME=$TMP/gnupg; install -d -m 0700 "$GNUPGHOME"
 gpg -q --import "$DIR/keys/release-signing-key.asc" 2>/dev/null
 gpg --status-fd 1 --verify "$TMP/a.tgz.sig" "$TMP/a.tgz" 2>/dev/null | grep -qE "^\[GNUPG:\] VALIDSIG .* $FPR\$" \

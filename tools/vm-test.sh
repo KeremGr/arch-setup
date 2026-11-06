@@ -203,7 +203,7 @@ install)
 #!/bin/bash
 exec > >(tee /dev/ttyS0) 2>&1
 cd /root && curl -fsS http://10.0.2.2:$port/arch-setup.tar.gz | tar xz && curl -fsS http://10.0.2.2:$port/answers -o /root/answers
-if bash /root/arch-setup/stage1/install.sh --answers /root/answers; then echo "ARCH-SETUP-STAGE1: OK"
+if bash /root/arch-setup/i --answers /root/answers; then echo "ARCH-SETUP-STAGE1: OK"
 else echo "ARCH-SETUP-STAGE1: FAIL"; tail -n 60 /tmp/arch-setup/stage1.log 2>/dev/null; fi
 sync; sleep 3; poweroff
 EOF

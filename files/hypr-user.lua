@@ -20,6 +20,10 @@ hl.config({
         kb_layout  = "@XKB_LAYOUT@",    -- chosen during install
         kb_variant = "@XKB_VARIANT@",
     },
+    ecosystem = {
+        no_update_news  = true,   -- no "Hyprland updated" popup after updates
+        no_donation_nag = true,
+    },
     misc = {
         vrr = 2,            -- adaptive sync for fullscreen apps only (no desktop flicker)
     },

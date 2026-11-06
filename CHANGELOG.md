@@ -2,6 +2,15 @@
 
 `arch-setup-update` shows the sections newer than your installed version before asking.
 
+## 1.0.1 — 2026-11-06
+
+- Shorter install command (223 characters instead of 279), with the same signature check.
+  It uses gpgv with the published key only.
+- Release files: a.tgz, a.sig, k. The v1.0.0 names are still published for older updaters.
+- The main kernel boots by default; the backup LTS kernel is the next GRUB entry.
+- No "Hyprland updated" popup or donation reminder on the desktop.
+- README: set a non-US keyboard before typing the install command.
+
 ## 1.0.0 — 2026-11-06
 
 First release.

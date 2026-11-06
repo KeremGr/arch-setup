@@ -10,7 +10,7 @@
 #   1. clean tree on main, signing key configured, gh logged in
 #   2. full privacy audit + Gitleaks over the whole history
 #   3. signed tag vX.Y.Z (verified)
-#   4. dist/arch-setup.tar.gz from that tag + detached signature + SHA256SUMS (all verified)
+#   4. dist/a.tgz from that tag + signature (a.sig) + public key (k) + signed SHA256SUMS (all verified)
 #   5. shows exactly what will be published -> you type the version to approve
 #   6. pushes the tag and creates the GitHub release with those files
 set -euo pipefail
@@ -42,14 +42,17 @@ git tag -v "$T" 2>&1 | grep -q "Good signature" || { git tag -d "$T"; die "tag s
 ok "signed tag $T"
 
 rm -rf dist; mkdir dist
-# Short file names keep the install command short: a.tgz (unpacks to a/), its signature, k.asc
+# Short names keep the install command short: a.tgz (unpacks to a/), a.sig, k (binary public key
+# for gpgv). a.tgz.sig + k.asc are the same data under the v1.0.0 names, for older updaters.
 git archive --format=tar.gz --prefix=a/ -o dist/a.tgz "$T"
-gpg --batch --yes -u "$KEY" --detach-sign -o dist/a.tgz.sig dist/a.tgz
+gpg --batch --yes -u "$KEY" --detach-sign -o dist/a.sig dist/a.tgz
+cp dist/a.sig dist/a.tgz.sig
+gpg --export "$KEY" >dist/k
 gpg --export --armor "$KEY" >dist/k.asc
-(cd dist && sha256sum a.tgz a.tgz.sig k.asc >SHA256SUMS)
+(cd dist && sha256sum a.tgz a.sig a.tgz.sig k k.asc >SHA256SUMS)
 gpg --batch --yes -u "$KEY" --detach-sign -o dist/SHA256SUMS.sig dist/SHA256SUMS
-# Verify exactly like the install command will
-gpg --status-fd 1 --verify dist/a.tgz.sig dist/a.tgz 2>/dev/null | grep -qE "VALIDSIG .* $KEY\$" \
+# Verify exactly like the install command will (gpgv with only the published key)
+gpgv --status-fd 1 --keyring ./dist/k dist/a.sig dist/a.tgz 2>/dev/null | grep -qE "VALIDSIG .* $KEY\$" \
     || { git tag -d "$T"; die "release signature does not verify against $KEY"; }
 ok "dist/ built and verified"
 
