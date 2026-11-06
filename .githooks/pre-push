@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+source "$(git rev-parse --show-toplevel)/.githooks/common.sh"
+[[ $(git config --get arch-setup.githubEmailSettingsVerified || true) == true ]] \
+    || fail "GitHub email privacy settings not confirmed yet ('Keep my email private' + 'Block command line pushes that expose my email')"
+check_identity
+check_ignored_not_tracked
+approved=$(git config --get arch-setup.approvedEmail)
+bad=$(git log --all --format='%h %ae%n%h %ce' | awk -v a="$approved" '$2 != a' | sort -u)
+[[ -z $bad ]] || fail "commits with a non-approved email:"$'\n'"$bad"
+pass "every commit uses the approved email"
+aname=$(git config --get arch-setup.approvedName)
+bad=$(git log --all --format='%h %an%n%h %cn' | awk -v a="$aname" '{n=$0; sub(/^[^ ]+ /,"",n)} n != a' | sort -u)
+[[ -z $bad ]] || fail "commits with a non-approved name:"$'\n'"$bad"
+pass "every commit is signed off as $aname"
+python3 -I "$ROOT/tools/privacy-audit.py" --all || fail "personal information in files or history"
+need_gitleaks
+gitleaks git --redact --no-banner "$ROOT" || fail "gitleaks found secrets in git history"
+pass "pre-push checks passed (full history scanned)"

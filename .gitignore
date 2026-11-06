@@ -1,0 +1,41 @@
+# ALLOW-LIST: everything is ignored unless explicitly listed below.
+# A new log, report or personal file is therefore never uploaded by accident.
+/*
+!/.gitignore
+!/.gitattributes
+!/.githooks/
+!/.privacy-allow
+!/install.sh
+!/lib.sh
+!/README.md
+!/LICENSE
+!/THIRD-PARTY-LICENSES.md
+!/docs/
+!/stage1/
+!/firstboot/
+!/modules/
+# scripts/ = one-off fixes for the author's own machine; stays local, ported into modules/
+!/tools/
+!/files/
+!/vetted/
+!/keys/
+
+# Never, even inside allowed folders
+__pycache__/
+*.py[co]
+*.log
+logs/
+*report*.txt
+*.pre-*
+*.pre-audit
+*.bak
+*.swp
+*~
+.env*
+*.key
+*.pem
+*.p12
+*.kdbx
+id_*
+!keys/*.asc
+private-terms.txt

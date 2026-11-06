@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+source "$(git rev-parse --show-toplevel)/.githooks/common.sh"
+check_identity
+check_ignored_not_tracked
+python3 -I "$ROOT/tools/privacy-audit.py" --staged || fail "personal information in staged files"
+need_gitleaks
+gitleaks git --pre-commit --staged --redact --no-banner "$ROOT" || fail "gitleaks found secrets in staged changes"
+pass "pre-commit checks passed"

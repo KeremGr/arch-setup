@@ -1,0 +1,19 @@
+# Regexes for PUBLIC values that are allowed in the repo (one per line).
+# Never put anything personal here.
+# Cloudflare public DNS (DNS-over-TLS config)
+^1\.1\.1\.1$
+^1\.0\.0\.1$
+^2606:4700:4700::1(111|001)$
+# GPT partition type GUIDs (public constants): Microsoft basic data, LUKS
+^EBD0A0A2-B9E5-4433-87C0-68B6B72699C7$
+^CA7D7CCB-63ED-4C53-861C-1742536059CC$
+# Caelestia's public LibreWolf/Firefox add-on ID
+^caelestiafox@caelestia\.org(\.xpi)?$
+# Microsoft reserved partition type GUID (used to detect an existing Windows)
+^e3c9e316-0b5c-4db8-817d-f92df00215ae$
+# UEFI global variable GUID (SecureBoot efivar)
+^8be4df61-93ca-11d2-aa0d-00e098032b8c$
+# QEMU user-mode networking: the host as seen from a test VM (same for everyone)
+^10\.0\.2\.2$
+# The public author name chosen for this project
+^Zhanius$

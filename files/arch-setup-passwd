@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# arch-setup-passwd: change your password everywhere it is used, in one go:
+#   login (+ sudo) · encrypted root disk (if it uses the same password) · data vault · GRUB menu lock
+# Use this instead of plain `passwd`. Run with: sudo arch-setup-passwd
+set -euo pipefail
+die() { printf '\e[1;31m  ✗ %s\e[0m\n' "$*" >&2; exit 1; }
+ok()  { printf '\e[1;32m  ✓\e[0m %s\n' "$*"; }
+[[ $EUID -eq 0 ]] || die "Run with: sudo arch-setup-passwd"
+. /etc/arch-setup/install.conf 2>/dev/null || true
+U=${SUDO_USER:-${USERNAME:-}}
+[[ -n $U && $U != root ]] || die "Run it with sudo from your normal account"
+
+read -rsp "Current password: " OLD; echo
+printf '%s\0' "$OLD" | runuser -u "$U" -- /usr/bin/unix_chkpwd "$U" nonull || die "Current password is wrong — nothing changed"
+while :; do
+    read -rsp "New password (min 12 characters): " NEW; echo
+    read -rsp "Repeat: " NEW2; echo
+    [[ $NEW == "$NEW2" && ${#NEW} -ge 12 ]] && break
+    echo "  Too short or didn't match — try again"
+done
+unset NEW2
+[[ $NEW =~ [^a-hj-zA-HJ-Z0-9] && -f /etc/grub.d/01_password ]] && \
+    echo "  Note: the GRUB menu uses a US keyboard layout. Characters other than a-z/0-9 (and i) sit on different keys there."
+
+OK_KF=$(mktemp -p /run); NEW_KF=$(mktemp -p /run); chmod 600 "$OK_KF" "$NEW_KF"
+trap 'shred -u "$OK_KF" "$NEW_KF" 2>/dev/null' EXIT
+printf '%s' "$OLD" >"$OK_KF"; printf '%s' "$NEW" >"$NEW_KF"
+
+# Every LUKS device that currently opens with the old password (root disk, vault)
+for dev in $(lsblk -rpno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
+    if cryptsetup open --test-passphrase --key-file "$OK_KF" "$dev" 2>/dev/null; then
+        cryptsetup luksChangeKey --key-file "$OK_KF" "$dev" "$NEW_KF" || die "Could not change the key on $dev — login password NOT changed"
+        ok "Disk encryption key updated on $dev"
+    fi
+done
+
+if [[ -f /etc/grub.d/01_password ]]; then
+    HASH=$(printf '%s\n%s\n' "$NEW" "$NEW" | grub-mkpasswd-pbkdf2 -c 200000 | awk '/grub\.pbkdf2/{print $NF}')
+    [[ $HASH == grub.pbkdf2.* ]] || die "Could not create the GRUB hash"
+    sed -i "s|^password_pbkdf2 $U .*|password_pbkdf2 $U $HASH|" /etc/grub.d/01_password
+    grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1 && ok "GRUB menu lock updated"
+fi
+
+printf '%s:%s\n' "$U" "$NEW" | chpasswd && ok "Login password changed"
+unset OLD NEW
+echo "  Your paper recovery key(s) still work and did not change."
