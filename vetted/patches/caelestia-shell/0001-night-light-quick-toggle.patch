@@ -1,0 +1,56 @@
+--- a/modules/utilities/cards/Toggles.qml
++++ b/modules/utilities/cards/Toggles.qml
+@@ -2,6 +2,8 @@
+ 
+ import QtQuick
+ import QtQuick.Layouts
++import Quickshell
++import Quickshell.Io
+ import Quickshell.Bluetooth
+ import Caelestia.Components
+ import Caelestia.Config
+@@ -140,6 +142,44 @@
+                     }
+                 }
+                 DelegateChoice {
++                    roleValue: "nightLight"
++                    // arch-setup: night light (gammastep) on/off. The state is read from the
++                    // running gammastep process, so SUPER+SHIFT+N and this button stay in sync.
++                    delegate: Toggle {
++                        id: nightLight
++
++                        property bool active: false
++
++                        icon: "nightlight"
++                        checked: active
++                        onClicked: {
++                            active = !active;
++                            Quickshell.execDetached(["/usr/local/bin/night-light-toggle"]);
++                            recheck.restart();
++                        }
++
++                        Process {
++                            id: nightCheck
++
++                            command: ["pgrep", "-x", "gammastep"]
++                            running: true
++                            onExited: code => nightLight.active = code === 0
++                        }
++                        Timer {
++                            id: recheck
++
++                            interval: 1500
++                            onTriggered: nightCheck.running = true
++                        }
++                        Timer {
++                            interval: 10000
++                            running: true
++                            repeat: true
++                            onTriggered: nightCheck.running = true
++                        }
++                    }
++                }
++                DelegateChoice {
+                     roleValue: "vpn"
+                     delegate: Toggle {
+                         icon: "vpn_key"

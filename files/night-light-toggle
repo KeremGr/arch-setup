@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Night light on/off (SUPER+SHIFT+N, or the moon button in the bottom-right panel). gammastep fades the colours back when stopped.
+if pgrep -x gammastep >/dev/null; then
+    pkill -x gammastep
+    notify-send -a "Night light" -i weather-clear "Night light off" "Normal colours. SUPER+SHIFT+N turns it back on."
+else
+    setsid -f gammastep >/dev/null 2>&1
+    notify-send -a "Night light" -i weather-clear-night "Night light on" "Warmer colours in the evening."
+fi

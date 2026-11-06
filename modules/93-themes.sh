@@ -125,9 +125,12 @@ systemctl --user daemon-reload
 systemctl --user enable --now caelestia-scheme-sync.path
 ok "Scheme -> wallpaper watcher running"
 
-section "Starting look: Autumn Forest"
-caelestia scheme set -n autumn-forest -m dark
+section "Starting look: $START_SCHEME"
+case $START_SCHEME in
+    catppuccin) FLAV=mocha ;;  rosepine) FLAV=main ;;  gruvbox|tokyonight|nord) FLAV=medium ;;  *) FLAV=default ;;
+esac
+caelestia scheme set -n "$START_SCHEME" -f "$FLAV" -m dark || { warn "Scheme $START_SCHEME not available — using autumn-forest"; START_SCHEME=autumn-forest FLAV=default; caelestia scheme set -n autumn-forest -m dark; }
 sleep 2
-START_WALL=$(find "$WALLS/autumn-forest/default-dark" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.png' \) | sort | head -1)
-[[ -n $START_WALL ]] && caelestia wallpaper -f "$START_WALL" || warn "No Autumn Forest wallpaper found in $WALLS"
+START_WALL=$(find "$WALLS/$START_SCHEME/$FLAV-dark" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.png' \) | sort | head -1)
+[[ -n $START_WALL ]] && caelestia wallpaper -f "$START_WALL" || warn "No wallpaper found in $WALLS/$START_SCHEME/$FLAV-dark"
 ok "Scheme: $(caelestia scheme get -n) · wallpaper: $(cat "${XDG_STATE_HOME:-$HOME/.local/state}/caelestia/wallpaper/path.txt" 2>/dev/null)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish a signed release.  Usage: tools/release.sh 1.0.0
+# Publish a signed release.  Usage: tools/release.sh 1.0.0   (needs VERSION + a CHANGELOG.md section)
 #
 # Trust model: the install command people type contains the signing key's FINGERPRINT.
 # It accepts a download only if it carries a valid signature from exactly that key, so a
@@ -27,6 +27,9 @@ gpg --list-secret-keys "$KEY" >/dev/null 2>&1 || die "signing key $KEY not in th
 [[ $(git branch --show-current) == main ]] || die "not on main"
 [[ -z $(git status --porcelain) ]] || die "uncommitted changes"
 git rev-parse -q --verify "refs/tags/$T" >/dev/null && die "tag $T already exists"
+[[ $(<VERSION) == "$V" ]] || die "VERSION file says $(<VERSION), not $V — update VERSION + CHANGELOG.md and commit first"
+grep -q "^## $V" CHANGELOG.md || die "CHANGELOG.md has no '## $V' section"
+[[ $(<keys/release-signing-key.fpr) == "$KEY" ]] || die "keys/release-signing-key.fpr doesn't match the signing key"
 gh auth status >/dev/null 2>&1 || die "gh is not logged in"
 ok "clean main, key ${KEY: -16}, gh logged in"
 
@@ -39,13 +42,14 @@ git tag -v "$T" 2>&1 | grep -q "Good signature" || { git tag -d "$T"; die "tag s
 ok "signed tag $T"
 
 rm -rf dist; mkdir dist
-git archive --format=tar.gz --prefix=arch-setup/ -o dist/arch-setup.tar.gz "$T"
-gpg --batch --yes -u "$KEY" --detach-sign -o dist/arch-setup.tar.gz.sig dist/arch-setup.tar.gz
-gpg --export --armor "$KEY" >dist/release-signing-key.asc
-(cd dist && sha256sum arch-setup.tar.gz arch-setup.tar.gz.sig release-signing-key.asc >SHA256SUMS)
+# Short file names keep the install command short: a.tgz (unpacks to a/), its signature, k.asc
+git archive --format=tar.gz --prefix=a/ -o dist/a.tgz "$T"
+gpg --batch --yes -u "$KEY" --detach-sign -o dist/a.tgz.sig dist/a.tgz
+gpg --export --armor "$KEY" >dist/k.asc
+(cd dist && sha256sum a.tgz a.tgz.sig k.asc >SHA256SUMS)
 gpg --batch --yes -u "$KEY" --detach-sign -o dist/SHA256SUMS.sig dist/SHA256SUMS
 # Verify exactly like the install command will
-gpg --status-fd 1 --verify dist/arch-setup.tar.gz.sig dist/arch-setup.tar.gz 2>/dev/null | grep -qE "VALIDSIG .* $KEY\$" \
+gpg --status-fd 1 --verify dist/a.tgz.sig dist/a.tgz 2>/dev/null | grep -qE "VALIDSIG .* $KEY\$" \
     || { git tag -d "$T"; die "release signature does not verify against $KEY"; }
 ok "dist/ built and verified"
 
@@ -53,7 +57,7 @@ echo
 echo "  ── Will be published ─────────────────────────────────────────"
 echo "  tag:     $T  ($(git rev-parse --short "$T"^{commit}))"
 echo "  files:"; ls -l dist | tail -n +2 | sed 's/^/    /'
-echo "  archive contents:"; tar -tzf dist/arch-setup.tar.gz | sed 's/^/    /'
+echo "  archive contents:"; tar -tzf dist/a.tgz | sed 's/^/    /'
 echo "  ──────────────────────────────────────────────────────────────"
 read -r -p "  Type $V to publish, anything else cancels: " a
 [[ $a == "$V" ]] || { git tag -d "$T" >/dev/null; die "cancelled (tag removed, nothing pushed)"; }

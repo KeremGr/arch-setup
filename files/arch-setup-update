@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# arch-setup-update — install the newest REVIEWED version of arch-setup.
+#
+#   arch-setup-update            check, show what's new, ask, then apply
+#   arch-setup-update --check    only say whether an update exists
+#
+# Trust: the release must be signed by the key whose fingerprint this PC already has
+# (/opt/arch-setup/keys, itself verified when you installed). No signature, no update.
+# Before anything changes, a snapshot is taken (bootable from the GRUB menu).
+set -euo pipefail
+DIR=/opt/arch-setup
+export SETUP_DIR=$DIR
+# shellcheck source=../lib.sh
+source "$DIR/lib.sh"
+require_user
+MODE=${1:-apply}
+BASE=${ARCH_SETUP_RELEASE_BASE:-https://github.com/KeremGr/arch-setup/releases/latest/download}
+PROTO='=https'; [[ -n ${ARCH_SETUP_RELEASE_BASE:-} && $BASE == http://10.0.2.2:* ]] && PROTO='=https,http'   # VM tests only
+FPR=$(<"$DIR/keys/release-signing-key.fpr")
+[[ $FPR =~ ^[0-9A-F]{40}$ ]] || die "No release key fingerprint on this PC ($DIR/keys)"
+STATE=${XDG_STATE_HOME:-$HOME/.local/state}/arch-setup; mkdir -p "$STATE"
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+section "Checking for a new reviewed version"
+for f in a.tgz a.tgz.sig; do
+    curl -fsSL --proto "$PROTO" --retry 3 -o "$TMP/$f" "$BASE/$f" || die "Download failed ($f). Online?"
+done
+export GNUPGHOME=$TMP/gnupg; install -d -m 0700 "$GNUPGHOME"
+gpg -q --import "$DIR/keys/release-signing-key.asc" 2>/dev/null
+gpg --status-fd 1 --verify "$TMP/a.tgz.sig" "$TMP/a.tgz" 2>/dev/null | grep -qE "^\[GNUPG:\] VALIDSIG .* $FPR\$" \
+    || die "Signature check FAILED — this download was not signed by the project key. Nothing was changed."
+ok "Signature valid (key ${FPR: -16})"
+tar -xzf "$TMP/a.tgz" -C "$TMP"
+NEW_DIR=$TMP/a
+OLD=$(<"$DIR/VERSION"); NEW=$(<"$NEW_DIR/VERSION")
+if [[ $(printf '%s\n%s\n' "$OLD" "$NEW" | sort -V | tail -1) == "$OLD" ]]; then
+    ok "Up to date (arch-setup $OLD)"; exit 0
+fi
+info "Update available: $OLD → $NEW"
+[[ $MODE == --check ]] && exit 0
+
+if [[ -f $NEW_DIR/CHANGELOG.md ]]; then
+    # only the sections newer than the installed version (newest first)
+    echo; awk -v old="$OLD" '/^## /{if ($2==old) exit; p=1} p {print "  " $0}' "$NEW_DIR/CHANGELOG.md"; echo
+fi
+confirm "Install arch-setup $NEW?" || { info "Nothing changed."; exit 0; }
+
+sudo -v || die "sudo failed"
+( while kill -0 $$ 2>/dev/null; do sudo -n -v 2>/dev/null; sleep 30; done ) &
+KEEPALIVE=$!; trap 'kill $KEEPALIVE 2>/dev/null || true; rm -rf "$TMP"' EXIT
+LOG=$STATE/update-$OLD-to-$NEW-$(date +%F-%H%M%S).log
+export WARN_LOG=$STATE/warnings.txt; : >"$WARN_LOG"
+exec > >(tee -a "$LOG") 2>&1
+
+section "Safety snapshot"
+sudo snapper --no-dbus -c root create --description "before arch-setup $OLD -> $NEW" --userdata important=yes \
+    && ok "Snapshot taken (pick it in the GRUB menu if anything goes wrong)"
+
+# Which parts changed? Only those modules run again (they're all safe to re-run).
+changed=()
+while read -r f; do changed+=("$f"); done < <(cd "$NEW_DIR" && find . -type f | sed 's|^\./||' | sort | while read -r f; do
+    cmp -s "$f" "$DIR/$f" 2>/dev/null || echo "$f"; done)
+has() { local m; for m in "${changed[@]}"; do [[ $m == "$1" ]] && return 0; done; return 1; }
+info "${#changed[@]} file(s) changed"
+
+section "Installing arch-setup $NEW"
+sudo rsync -a --delete "$NEW_DIR/" "$DIR.new/"
+sudo chown -R root:root "$DIR.new"; sudo chmod -R u=rwX,go=rX "$DIR.new"
+sudo rm -rf "$DIR.old"; sudo mv "$DIR" "$DIR.old"; sudo mv "$DIR.new" "$DIR"
+sudo install -m 0755 "$DIR/files/arch-setup-update" /usr/local/bin/arch-setup-update
+sudo install -m 0755 "$DIR/files/arch-setup-passwd" /usr/local/bin/arch-setup-passwd
+sudo install -m 0755 "$DIR/files/arch-setup-vpn" /usr/local/bin/arch-setup-vpn
+sudo install -m 0755 "$DIR/files/night-light-toggle" /usr/local/bin/night-light-toggle
+ok "Files updated (previous version kept in $DIR.old)"
+
+run_root() { info "▶ $1"; sudo env SETUP_DIR="$DIR" SETUP_USER="$USER" LOCK_ROOT=n WARN_LOG="$WARN_LOG" ARCH_SETUP_UPDATE=1 \
+                 bash "$DIR/modules/$1.sh" || die "module $1 failed — log: $LOG (snapshot available in GRUB)"; }
+run_user() { info "▶ $1"; ARCH_SETUP_UPDATE=1 bash "$DIR/modules/$1.sh" || die "module $1 failed — log: $LOG"; }
+
+section "System packages"
+sudo pacman -Syu --noconfirm
+
+for m in 10-base 20-network 30-firewall 40-hardening 50-performance 55-gaming 60-storage 70-snapshots 80-login; do
+    has "modules/$m.sh" && run_root "$m"
+done
+run_user 90-aur          # rebuilds only what changed (new reviewed version, pinned commit, or after a Qt update)
+if has vetted/caelestia-dots.lock || has modules/91-caelestia.sh; then run_user 91-caelestia; fi
+for m in 92-apps 93-themes; do has "modules/$m.sh" && run_user "$m"; done
+has modules/95-desktop-root.sh && run_root 95-desktop-root
+if has modules/99-finalize.sh || has modules/50-performance.sh; then run_root 99-finalize; fi
+
+if pgrep -x qs >/dev/null; then
+    caelestia shell -r -d >/dev/null 2>&1 && ok "Shell restarted with the new version"
+fi
+echo "$NEW" >"$STATE/version"
+section "Done"
+[[ -s $WARN_LOG ]] && { warn "Notes:"; cat "$WARN_LOG"; }
+ok "arch-setup $NEW installed. Log: $LOG"
+echo "  A restart is recommended if the kernel, graphics driver or shell were updated."

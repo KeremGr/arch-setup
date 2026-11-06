@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# arch-setup-vpn — put a WireGuard VPN on the Caelestia quick-toggle (bottom-right panel).
+#
+#   arch-setup-vpn add ~/Downloads/your-vpn.conf ["Proton VPN"]   install a WireGuard config
+#   arch-setup-vpn remove                                          remove it again
+#   arch-setup-vpn status                                          show whether it's connected
+#
+# Works with any standard WireGuard config (Proton VPN Free, Mullvad, ...). Uses the kernel's
+# own WireGuard (wg-quick), no extra VPN app. The config is checked first: only standard
+# connection fields are accepted. PostUp/PreUp lines would run commands as root, so they're refused.
+# Your encrypted DNS keeps working and goes through the tunnel.
+set -euo pipefail
+die() { printf '\e[1;31m  ✗ %s\e[0m\n' "$*" >&2; exit 1; }
+ok()  { printf '\e[1;32m  ✓\e[0m %s\n' "$*"; }
+[[ $EUID -ne 0 ]] || die "Run as your normal user (it asks for sudo when needed)"
+IFACE=vpn
+CONF=/etc/wireguard/$IFACE.conf
+RULE=/etc/polkit-1/rules.d/50-arch-setup-vpn.rules
+SHELLCFG=${XDG_CONFIG_HOME:-$HOME/.config}/caelestia/shell.json
+
+caelestia_cfg() {   # caelestia_cfg add NAME | remove
+    python3 -I - "$SHELLCFG" "$@" <<'PY'
+import json, sys, pathlib
+p, op = pathlib.Path(sys.argv[1]), sys.argv[2]
+d = json.loads(p.read_text()) if p.exists() and p.read_text().strip() else {}
+vpn = d.setdefault("utilities", {}).setdefault("vpn", {})
+providers = [x for x in vpn.get("provider", []) if x.get("id") != "arch-setup-vpn"]
+if op == "add":
+    providers.append({"id": "arch-setup-vpn", "name": "wireguard", "displayName": sys.argv[3], "interface": "vpn"})
+    vpn["selectedProvider"] = "arch-setup-vpn"
+    for t in d["utilities"].get("quickToggles", []):
+        if t.get("id") == "vpn":
+            t["enabled"] = True
+elif vpn.get("selectedProvider") == "arch-setup-vpn":
+    vpn["selectedProvider"] = ""
+vpn["provider"] = providers
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(d, indent=4))
+PY
+}
+
+case ${1:-} in
+add)
+    SRC=${2:?usage: arch-setup-vpn add FILE.conf [NAME]}
+    NAME=${3:-VPN}
+    [[ -f $SRC ]] || die "$SRC not found"
+    CLEAN=$(mktemp); trap 'shred -u "$CLEAN" 2>/dev/null' EXIT
+    # Allow only standard WireGuard fields. Anything else (PostUp, PreUp, PostDown, PreDown,
+    # SaveConfig, Table, FwMark...) is refused. DNS is dropped: your encrypted DNS is kept
+    # and runs through the tunnel.
+    python3 -I - "$SRC" "$CLEAN" <<'PY' || exit 1
+import re, sys
+ALLOWED = {"interface": {"privatekey", "address", "mtu", "listenport", "dns"},
+           "peer": {"publickey", "presharedkey", "allowedips", "endpoint", "persistentkeepalive"}}
+out, section, seen, peers = [], None, set(), 0
+for n, raw in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
+    line = raw.strip()
+    if not line or line.startswith(("#", ";")):
+        continue
+    m = re.fullmatch(r"\[(\w+)\]", line)
+    if m:
+        section = m[1].lower()
+        if section not in ALLOWED:
+            sys.exit(f"line {n}: unknown section [{m[1]}] — refusing")
+        peers += section == "peer"
+        out.append(f"[{m[1].capitalize()}]")
+        continue
+    if "=" not in line or section is None:
+        sys.exit(f"line {n}: not a WireGuard setting — refusing")
+    key, val = (x.strip() for x in line.split("=", 1))
+    if key.lower() not in ALLOWED[section]:
+        sys.exit(f"line {n}: '{key}' is not allowed (it could run commands as root) — refusing")
+    if not re.fullmatch(r"[A-Za-z0-9+/=.:,\[\]\- ]+", val):
+        sys.exit(f"line {n}: unexpected characters in '{key}' — refusing")
+    if key.lower() == "dns":
+        continue
+    seen.add(f"{section}.{key.lower()}")
+    out.append(f"{key} = {val}")
+need = {"interface.privatekey", "interface.address", "peer.publickey", "peer.endpoint", "peer.allowedips"}
+if missing := need - seen:
+    sys.exit("missing: " + ", ".join(sorted(missing)))
+if peers != 1:
+    sys.exit("expected exactly one [Peer]")
+open(sys.argv[2], "w").write("\n".join(out) + "\n")
+PY
+    ok "Config checked: only standard WireGuard settings, no commands"
+    grep -E '^(Endpoint|AllowedIPs) ' "$CLEAN" | sed 's/^/     /'
+    sudo -v
+    sudo install -D -m 0600 -o root -g root "$CLEAN" "$CONF"
+    # The panel runs 'pkexec wg-quick up|down vpn'. Allow exactly those two commands without a
+    # password prompt, for your active local session only.
+    sudo install -D -m 0644 /dev/stdin "$RULE" <<'JS'
+// arch-setup: the Caelestia VPN toggle may run exactly these two commands without a password.
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/bin/wg-quick" &&
+        subject.isInGroup("wheel") && subject.local && subject.active) {
+        var cmd = action.lookup("command_line");
+        if (cmd == "/usr/bin/wg-quick up vpn" || cmd == "/usr/bin/wg-quick down vpn")
+            return polkit.Result.YES;
+    }
+});
+JS
+    caelestia_cfg add "$NAME"
+    caelestia shell -r -d >/dev/null 2>&1 || true
+    ok "\"$NAME\" is on the VPN toggle (bottom-right panel). It connects when you switch it on."
+    ;;
+remove)
+    sudo wg-quick down "$IFACE" 2>/dev/null || true
+    sudo rm -f "$CONF" "$RULE"
+    caelestia_cfg remove
+    caelestia shell -r -d >/dev/null 2>&1 || true
+    ok "VPN removed"
+    ;;
+status)
+    if ip link show "$IFACE" &>/dev/null; then ok "Connected ($(sudo wg show "$IFACE" endpoints 2>/dev/null | awk '{print $2}'))"
+    else echo "  Not connected"; fi
+    ;;
+*) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

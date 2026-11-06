@@ -17,3 +17,9 @@
 ^10\.0\.2\.2$
 # The public author name chosen for this project
 ^Zhanius$
+# Public encrypted-DNS providers offered by the installer (Quad9, Mullvad)
+^9\.9\.9\.9$
+^149\.112\.112\.112$
+^2620:fe::(fe|9)$
+^194\.242\.2\.2$
+^2a07:e340::2$

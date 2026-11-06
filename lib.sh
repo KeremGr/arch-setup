@@ -65,6 +65,11 @@ ARCH_SETUP_CONF=${ARCH_SETUP_CONF:-/etc/arch-setup/install.conf}
 [[ -r $ARCH_SETUP_CONF ]] && source "$ARCH_SETUP_CONF"
 : "${KEYMAP:=us}" "${XKB_LAYOUT:=us}" "${XKB_VARIANT:=}" "${DATA_DISK:=}" "${MIRROR_COUNTRIES:=}" "${ROOT_ENCRYPTED:=no}" "${GPU:=}"
 HDD_ID=$DATA_DISK     # /dev/disk/by-id/... picked by the user, or empty
+# Apps & preferences (stage-1 questions). Defaults = the recommended setup.
+: "${BROWSER:=librewolf}" "${WANT_SPOTIFY:=y}" "${WANT_DISCORD:=y}" "${DEV_TOOLS:=full}"
+: "${WANT_GAMING:=n}" "${WANT_EXTRAS:=n}" "${WANT_FLATPAK:=n}" "${WANT_BLUETOOTH:=y}" "${WANT_PRINTING:=n}"
+: "${WANT_LTS:=y}" "${START_SCHEME:=autumn-forest}" "${DNS_PROVIDER:=cloudflare}"
+: "${IDLE_LOCK_MIN:=10}" "${IDLE_SLEEP_MIN:=0}" "${NIGHT_LIGHT:=y}"
 STATE_DIR=/var/lib/arch-setup
 
 # Install mode: the modules also run inside arch-chroot from the Arch ISO. There, nothing is

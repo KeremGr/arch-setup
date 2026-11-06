@@ -1,0 +1,6 @@
+# Caelestia dotfiles: the exact upstream commit that was reviewed (manifest, hooks, configs).
+# The installer keeps a local mirror whose "reviewed" branch sits at this commit, and points
+# caelestia-cli at it, so `caelestia install` and `caelestia update` only ever get this version.
+url=https://github.com/caelestia-dots/caelestia.git
+commit=01d2df329240be60148d25804690779a078c6378
+reviewed=2026-11-06

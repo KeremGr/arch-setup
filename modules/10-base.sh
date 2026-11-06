@@ -56,21 +56,28 @@ pacman -Syu --noconfirm
 
 section "Official packages"
 PKGS=(
-    # build / tools
-    git base-devel pacman-contrib rsync wget unzip jq inotify-tools fd ripgrep lazygit tree-sitter-cli
+    # build / tools (python + rustup are also needed to build the reviewed AUR packages)
+    git base-devel pacman-contrib rsync wget unzip jq inotify-tools fd ripgrep python python-gobject rustup
     # security / storage / snapshots
     ufw apparmor cryptsetup exfatprogs gptfdisk snapper snap-pac grub-btrfs restic fwupd zram-generator
     # boot menu finds other systems (Windows); hardware info
     os-prober ntfs-3g pciutils
     # desktop + login (the first-login setup runs in foot)
-    hyprland foot greetd greetd-tuigreet
-    # apps
-    librewolf code neovim spotify-launcher wireguard-tools gammastep
-    # dev: python, C/C++, rust
-    python python-gobject uv rustup gcc clang cmake ninja meson gdb nodejs npm
-    # cursors / fonts
+    hyprland foot greetd greetd-tuigreet wireguard-tools gammastep
+    # cursors
     capitaine-cursors
 )
+# Your choices from the installer (defaults in lib.sh)
+PKGS+=("$BROWSER")
+[[ $WANT_SPOTIFY == y ]] && PKGS+=(spotify-launcher)
+case $DEV_TOOLS in
+    full)  PKGS+=(neovim lazygit tree-sitter-cli code uv gcc clang cmake ninja meson gdb nodejs npm) ;;
+    basic) PKGS+=(neovim lazygit tree-sitter-cli) ;;
+esac
+[[ $WANT_EXTRAS == y ]] && PKGS+=(mpv obs-studio libreoffice-fresh loupe)
+[[ $WANT_FLATPAK == y ]] && PKGS+=(flatpak)
+[[ $WANT_BLUETOOTH == y ]] && PKGS+=(bluez bluez-utils)
+[[ $WANT_PRINTING == y ]] && PKGS+=(cups cups-pdf system-config-printer)
 has_nvidia && PKGS+=(libva-nvidia-driver)     # video decoding on NVIDIA under Wayland
 pacman -S --needed --noconfirm "${PKGS[@]}"
 ok "Installed ${#PKGS[@]} packages (all from official, signed Arch repos)"
@@ -80,5 +87,10 @@ write_file /etc/makepkg.conf.d/no-debug.conf <<'CONF'
 OPTIONS=(strip docs !libtool !staticlibs emptydirs zipman purge !debug lto)
 CONF
 
+[[ $WANT_BLUETOOTH == y ]] && systemctl enable bluetooth.service && ok "Bluetooth enabled"
+[[ $WANT_PRINTING == y ]] && systemctl enable cups.socket && ok "Printing enabled (CUPS starts when needed)"
+if [[ $WANT_FLATPAK == y ]]; then
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && ok "Flathub added"
+fi
 systemctl enable paccache.timer
 ok "Weekly package cache cleanup enabled"

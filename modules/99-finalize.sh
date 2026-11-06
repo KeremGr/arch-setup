@@ -28,9 +28,34 @@ Exec = /bin/sh -c '/usr/local/lib/arch-setup/grub-unrestricted.sh && grub-mkconf
 HOOK
 fi
 
-section "Password tool"
+section "Password + update tools"
 install -D -m 0755 "$SETUP_DIR/files/arch-setup-passwd" /usr/local/bin/arch-setup-passwd
 ok "Change your password with: sudo arch-setup-passwd (keeps disk encryption + GRUB in sync)"
+install -D -m 0755 "$SETUP_DIR/files/arch-setup-update" /usr/local/bin/arch-setup-update
+install -D -m 0755 "$SETUP_DIR/files/arch-setup-vpn" /usr/local/bin/arch-setup-vpn
+install -D -m 0755 "$SETUP_DIR/files/night-light-toggle" /usr/local/bin/night-light-toggle
+ok "Get reviewed updates with: arch-setup-update (signature-checked, snapshot first)"
+
+section "Dual boot ready (Windows now or later)"
+grep -q '^GRUB_DISABLE_OS_PROBER=false' /etc/default/grub || echo 'GRUB_DISABLE_OS_PROBER=false' >>/etc/default/grub
+pacman -S --needed --noconfirm os-prober ntfs-3g >/dev/null
+install -D -m 0755 "$SETUP_DIR/files/os-detect.sh" /usr/local/lib/arch-setup/os-detect.sh
+write_file /etc/systemd/system/arch-setup-os-detect.service <<'CONF'
+[Unit]
+Description=arch-setup: find other systems (e.g. Windows) for the GRUB menu, keep GRUB first
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/lib/arch-setup/os-detect.sh
+
+[Install]
+WantedBy=multi-user.target
+CONF
+systemctl enable arch-setup-os-detect.service >/dev/null 2>&1
+ok "Other systems are found at every boot; GRUB stays first in the boot order"
 
 section "Rebuilding initramfs + GRUB (once)"
 mkinitcpio -P
@@ -65,7 +90,9 @@ ExecStart=/usr/local/lib/arch-setup/firstboot.sh
 WantedBy=multi-user.target
 CONF
 live systemctl daemon-reload
-if [[ $IN_CHROOT == 1 ]]; then
+if [[ ${ARCH_SETUP_UPDATE:-0} == 1 ]]; then
+    ok "Update: first-boot check not re-armed (it already ran)"
+elif [[ $IN_CHROOT == 1 ]]; then
     ok "The first-login setup runs this check when it finishes"
 else
     systemctl enable arch-setup-firstboot.service

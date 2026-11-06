@@ -9,7 +9,7 @@ require_user
 
 FROM=00
 [[ ${1:-} == --from ]] && FROM=${2:?usage: --from NN}
-ROOT_MODULES_A=(10-base 20-network 30-firewall 40-hardening 50-performance 60-storage 70-snapshots 80-login)
+ROOT_MODULES_A=(10-base 20-network 30-firewall 40-hardening 50-performance 55-gaming 60-storage 70-snapshots 80-login)
 USER_MODULES=(90-aur 91-caelestia 92-apps 93-themes)
 ROOT_MODULES_B=(95-desktop-root 99-finalize)
 

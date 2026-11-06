@@ -33,12 +33,13 @@ questions, and never touches a disk you didn't name.
    write it to a USB stick and boot from it.
 2. Connect to the internet. Ethernet works by itself; for Wi-Fi run `iwctl`, then
    `station wlan0 connect YOUR-WIFI`.
-3. Type the install command. **Get it, including the 40-character fingerprint, from the
-   person who gave you this project, or check it against the signed release page.** It
-   downloads the release and runs it only if the signature was made by that exact key:
+3. Type the install command. It downloads the latest release and runs it **only if** it was
+   signed by the project key `60E5 ED45 939B 671B F4DC 8EA6 3910 1B81 A306 0755`
+   (Zhanius). If someone shared this project with you, check that fingerprint with them
+   directly: that protects you even if this page were ever tampered with.
 
    ```
-   F=<FINGERPRINT>; U=https://github.com/KeremGr/arch-setup/releases/latest/download; cd /root && curl -fLO $U/arch-setup.tar.gz -fLO $U/arch-setup.tar.gz.sig -fLO $U/release-signing-key.asc && gpg -q --import release-signing-key.asc && gpg --status-fd 1 --verify arch-setup.tar.gz.sig arch-setup.tar.gz 2>/dev/null | grep -qE "VALIDSIG .* $F$" && tar xzf arch-setup.tar.gz && bash arch-setup/stage1/install.sh || echo "NOT VERIFIED - do not continue"
+   F=60E5ED45939B671BF4DC8EA639101B81A3060755;curl -fL --remote-name-all https://github.com/KeremGr/arch-setup/releases/latest/download/{a.tgz,a.tgz.sig,k.asc}&&gpg --import k.asc&&gpg --status-fd 1 --verify a.tgz.sig|grep -q "VALIDSIG.* $F$"&&tar xf a.tgz&&bash a/stage1/install.sh
    ```
 
    It's long. To paste it from another computer instead: on the ISO run `passwd` (set a
@@ -54,6 +55,11 @@ questions, and never touches a disk you didn't name.
      2. erase it but leave space for Windows later
      3. install into free space next to an existing Windows
    - disk encryption (optional), an extra data disk (optional), boot menu lock
+   - apps & preferences (press Enter for the recommended choice):
+     - browser (LibreWolf or Firefox), Spotify, Discord
+     - developer tools (full, basic or none), gaming (Steam), extra apps, Flatpak
+     - Bluetooth, printing, a backup kernel
+     - starting theme, DNS provider (Cloudflare, Quad9 or Mullvad), night light, screen lock and sleep timers
 5. Check the summary, then each disk's **final check**: model, serial, size and every
    partition affected. You confirm by typing the disk's name.
 6. When it finishes: remove the USB and `reboot`. Log in. A window finishes the desktop
@@ -67,16 +73,61 @@ questions, and never touches a disk you didn't name.
 | Launcher / scheme / wallpaper | `SUPER` |
 | Change your password | `sudo arch-setup-passwd`. It keeps disk encryption + GRUB in sync. Don't use plain `passwd`. |
 | Roll back a bad update | Pick a snapshot in the GRUB menu (needs the GRUB password if you locked it) |
+| Night light on/off | `SUPER+SHIFT+N` |
+| VPN on/off | the VPN toggle in the bottom-right panel (after `arch-setup-vpn add`, see below) |
 | Self-check report | `~/.local/state/arch-setup/firstboot-report.txt` |
 | Keep a site logged in (LibreWolf clears cookies on close) | `/opt/arch-setup/tools/librewolf-keep-logins.py site.com` with LibreWolf closed |
+
+### VPN (free option: Proton VPN Free)
+
+Proton VPN's free plan has no data limit and an independently audited no-logs policy
+(1 device, a few countries). It works with the kernel's own WireGuard, with no extra app:
+
+1. Create a free account at protonvpn.com and sign in at account.protonvpn.com.
+2. Go to Downloads → WireGuard configuration, pick a free server, and download the `.conf` file.
+3. Run `arch-setup-vpn add ~/Downloads/<file>.conf "Proton VPN"`.
+
+The VPN toggle in the bottom-right panel then switches it on and off. `arch-setup-vpn` refuses
+config files that try to run commands, and your encrypted DNS keeps working through the tunnel.
+Any other WireGuard provider works the same way; Mullvad is the most private, but paid.
 
 **Forgot your disk password?** Use the paper recovery key you wrote down during install.
 
 ## Updates
 
-New upstream versions (Caelestia, quickshell, AUR packages) are reviewed first, then tested
-on a real machine and in VMs, and only then released as a new signed version. `paru` doesn't
-auto-update `-git` packages, so nothing unreviewed sneaks in.
+On an installed system, run:
+
+```
+arch-setup-update
+```
+
+It downloads the newest release and installs it only if it was signed by the project key, which
+your PC already knows from the install. First it shows what's new and asks, then it takes a
+snapshot, then it applies only the parts that changed. Normal `sudo pacman -Syu` keeps
+working for everything else. The reviewed AUR packages and Caelestia's dotfiles only change
+through `arch-setup-update`, so nothing unreviewed gets in.
+
+How an update is made (maintainer):
+1. `tools/check-upstream.sh` writes a report of everything that changed upstream:
+   AUR build-file diffs, new commits of the `-git` sources, and Caelestia dotfile changes
+   including every install hook.
+2. Read it. If it's fine: `tools/approve-update.sh <package | caelestia-dots>` records the
+   reviewed versions.
+3. Test in the VMs (`tools/vm-test.sh`), then bump `VERSION` and add a `CHANGELOG.md` section.
+4. Commit, push, then `tools/release.sh X.Y.Z` (signed). Every installed PC can then run
+   `arch-setup-update`.
+
+## Dual boot
+
+- **Windows already installed:** choose option 3 (install into free space). Your Windows
+  partitions aren't touched.
+- **Windows later:** choose option 2 (leave space), then install Windows into that space.
+  Windows setup makes itself the default boot entry, so open your BIOS boot menu once
+  (usually F8, F11 or F12) and pick Arch/GRUB. From then on, Arch finds Windows by itself,
+  adds it to the GRUB menu and puts GRUB first again.
+- In Windows, turn off **Fast Startup**, and set the clock to UTC so the time isn't off by your
+  timezone between the two systems:
+  `reg add "HKLM\System\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`
 
 ## For maintainers
 
@@ -88,6 +139,7 @@ auto-update `-git` packages, so nothing unreviewed sneaks in.
 | `install.sh` | alternative: set up an *already installed* Arch from inside Hyprland |
 | `tools/vm-test.sh` | unattended VM installs: `encrypted-data`, `plain-keep`, `dualboot` |
 | `tools/release.sh` | signed tag + signed archive + checksums; shows everything before publishing |
+| `tools/check-upstream.sh`, `tools/approve-update.sh` | review upstream changes, then record approved versions |
 | `tools/privacy-audit.py` | finds personal data (usernames, paths, IDs, serials, emails...) in files and history |
 
 Commits and pushes go through `.githooks/` (`git config core.hooksPath .githooks`):

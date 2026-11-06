@@ -12,6 +12,12 @@
 #   plain-keep       erase, leave 20 GiB empty for Windows later, no encryption, US keyboard
 #   dualboot         a disk that already has "Windows" partitions: install into free space only,
 #                    separate disk password, German keyboard. Checks the Windows partitions survive.
+#   custom           every "Apps & preferences" answer set to a NON-default (Firefox, gaming, Flatpak...)
+#   hybrid           laptop-style iGPU + NVIDIA driver path (simulated: the VM has no NVIDIA card),
+#                    erase whole disk, UK formats, GRUB lock
+#
+#   tools/vm-test.sh release-test SCENARIO 1.0.1   serve a test update signed by the VM-only test key;
+#                    in the VM run:  ARCH_SETUP_RELEASE_BASE=<printed url> arch-setup-update
 #
 # Only the files that would be published (git allow-list) are sent to the VM. The test password
 # is random per VM, kept in the VM folder (outside the repo), and never contains 'i' (it moves
@@ -90,8 +96,76 @@ GRUB_LOCK=y
 CONFIRM_DISKS="vda"
 EOF
         ;;
+        hybrid) cat <<EOF | sed 's/^GPU_FORCE=other$/GPU_FORCE=nvidia-hybrid/'
+$common
+KEYMAP=us
+XKB_LAYOUT=us
+XKB_VARIANT=
+TIMEZONE=Europe/London
+WEATHER_CITY=London
+MIRROR_COUNTRIES="United Kingdom,Germany"
+DISK_MODE_N=1
+ENCRYPT=n
+USE_DATA=n
+GRUB_LOCK=y
+CONFIRM_DISKS="vda"
+EOF
+        ;;
+        custom) cat <<EOF
+$common
+KEYMAP=us
+XKB_LAYOUT=us
+XKB_VARIANT=
+TIMEZONE=America/New_York
+WEATHER_CITY="New York"
+MIRROR_COUNTRIES="United States"
+DISK_MODE_N=1
+ENCRYPT=n
+USE_DATA=n
+GRUB_LOCK=n
+BROWSER=firefox
+WANT_SPOTIFY=n
+WANT_DISCORD=n
+DEV_TOOLS=basic
+WANT_GAMING=y
+WANT_EXTRAS=y
+WANT_FLATPAK=y
+WANT_BLUETOOTH=y
+WANT_PRINTING=y
+WANT_LTS=y
+START_SCHEME=nord
+DNS_PROVIDER=quad9
+IDLE_LOCK_MIN=5
+IDLE_SLEEP_MIN=30
+CONFIRM_DISKS="vda"
+EOF
+        ;;
         *) echo "unknown scenario $sc" >&2; exit 2 ;;
     esac
+}
+
+# VM-only signing key: test installs trust it instead of the real project key, so update
+# tests never need (or touch) the real key.
+test_key() {
+    export GNUPGHOME=$VMS/test-gnupg
+    if [[ ! -d $GNUPGHOME ]]; then
+        install -d -m 0700 "$GNUPGHOME"
+        gpg -q --batch --passphrase '' --quick-generate-key "arch-setup VM test key" ed25519 sign 30d 2>/dev/null
+    fi
+    TFPR=$(gpg --list-keys --with-colons "arch-setup VM test key" | awk -F: '/^fpr/{print $10; exit}')
+}
+pack_repo() {   # pack_repo OUT.tgz PREFIX [VERSION]  — published files, with the VM test key
+    local out=$1 prefix=$2 ver=${3:-} t; t=$(mktemp -d); chmod 0755 "$t"
+    (cd "$REPO" && git ls-files -z -co --exclude-standard | tar --null -T - -cf - | tar -x -C "$t")
+    test_key
+    gpg --armor --export "$TFPR" >"$t/keys/release-signing-key.asc"; echo "$TFPR" >"$t/keys/release-signing-key.fpr"
+    if [[ -n $ver ]]; then
+        echo "$ver" >"$t/VERSION"
+        # new sections go on top, like a real release
+        awk -v v="$ver" '!done && /^## /{print "## " v " — VM test update\n\n- test release\n"; done=1} {print}' "$t/CHANGELOG.md" >"$t/c" && mv "$t/c" "$t/CHANGELOG.md"
+    fi
+    tar -czf "$out" -C "$t" --transform "s,^\.,$prefix," .
+    rm -rf "$t"
 }
 
 qemu_base() {
@@ -122,8 +196,8 @@ install)
     pw=$(rand_pw 16); pw2=$(rand_pw 16)
     umask 077; printf '%s\n' "$pw" >"$D/password"; printf '%s\n' "$pw2" >"$D/disk-password"
     answers "$pw" "$pw2" >"$D/www/answers"
-    # Ship exactly what would be published
-    (cd "$REPO" && git ls-files -z -co --exclude-standard | tar --null -T - -czf "$D/www/arch-setup.tar.gz" --transform 's,^,arch-setup/,')
+    # Ship exactly what would be published (with the VM-only test key instead of the real one)
+    pack_repo "$D/www/arch-setup.tar.gz" arch-setup
     port=$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
     cat >"$D/www/run.sh" <<EOF
 #!/bin/bash
@@ -156,6 +230,15 @@ boot)
     [[ ${VM_NOGL:-0} == 1 ]] && QEMU=("${QEMU[@]/virtio-vga-gl/virtio-vga}") && QEMU=("${QEMU[@]/egl-headless/none}")
     echo "VM $sc booting (QMP: $D/qmp.sock)"
     exec "${QEMU[@]}"
+    ;;
+release-test)
+    V=${3:?version, e.g. 1.0.1}
+    W=$VMS/release-$V; rm -rf "$W"; mkdir -p "$W"
+    pack_repo "$W/a.tgz" a "$V"
+    gpg -q --batch --yes -u "$TFPR" --detach-sign -o "$W/a.tgz.sig" "$W/a.tgz"
+    port=$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+    echo "Serving test release $V. In the VM:  ARCH_SETUP_RELEASE_BASE=http://10.0.2.2:$port arch-setup-update"
+    cd "$W" && exec python3 -I -m http.server --bind 127.0.0.1 "$port"
     ;;
 shot)  if [[ -S $D/vnc.sock ]]; then python3 -I "$REPO/tools/vmctl.py" "$D/vnc.sock" vncshot "${3:?out.png}"
        else "${VMCTL[@]}" shot "${3:?out.png}"; fi ;;

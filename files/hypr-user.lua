@@ -32,6 +32,9 @@ hl.config({
     },
 })
 
+-- SUPER+SHIFT+N: night light on/off
+hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("/usr/local/bin/night-light-toggle"))
+
 -- Music & chat apps open as normal tiled windows on the current workspace
 -- (Caelestia puts them on special workspaces, which cover everything else).
 for _, tag in ipairs({ "music_player", "communication_app" }) do

@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Encrypted DNS (DNS-over-TLS) to Cloudflare with DNSSEC, no router/ISP DNS,
+# Encrypted DNS (DNS-over-TLS: Cloudflare, Quad9 or Mullvad) with DNSSEC, no router/ISP DNS,
 # no LLMNR/mDNS, MAC + IPv6 privacy, and blocking of two leaky endpoints.
 source "$(dirname "$0")/../lib.sh"
 require_root
 
-section "systemd-resolved: DNS-over-TLS + DNSSEC"
-write_file /etc/systemd/resolved.conf.d/10-cloudflare-dot.conf <<'CONF'
+section "systemd-resolved: DNS-over-TLS + DNSSEC ($DNS_PROVIDER)"
+# Each server is pinned to its TLS name, so nobody in between can impersonate it.
+case $DNS_PROVIDER in
+    quad9)   DNS_SERVERS="9.9.9.9#dns.quad9.net 149.112.112.112#dns.quad9.net 2620:fe::fe#dns.quad9.net 2620:fe::9#dns.quad9.net" ;;
+    mullvad) DNS_SERVERS="194.242.2.2#dns.mullvad.net 2a07:e340::2#dns.mullvad.net" ;;
+    *)       DNS_SERVERS="1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com" ;;
+esac
+rm -f /etc/systemd/resolved.conf.d/10-cloudflare-dot.conf     # older name
+write_file /etc/systemd/resolved.conf.d/10-encrypted-dns.conf <<CONF
 [Resolve]
-# Cloudflare, authenticated by TLS hostname (prevents spoofing / ISP snooping)
-DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com
+DNS=$DNS_SERVERS
 # Never fall back to anyone else (the default fallback includes Google & Quad9)
 FallbackDNS=
 # Route ALL queries to the servers above, not to per-link (router) DNS
@@ -67,7 +73,7 @@ if [[ $IN_CHROOT == 1 ]]; then
     exit 0      # everything below needs a running network stack; it applies at first boot
 fi
 
-# Existing connections: ignore router DNS (new ones get it from 10-cloudflare-dot.conf: Domains=~.)
+# Existing connections: ignore router DNS (new ones follow 10-encrypted-dns.conf: Domains=~.)
 while IFS=: read -r uuid type; do
     [[ $type == 802-3-ethernet || $type == 802-11-wireless ]] || continue
     nmcli connection modify "$uuid" ipv4.ignore-auto-dns yes ipv6.ignore-auto-dns yes
@@ -92,12 +98,12 @@ for _ in {1..30}; do resolvectl query archlinux.org &>/dev/null && break; sleep 
 
 if ! resolvectl query archlinux.org &>/dev/null; then
     warn "DNS failed with strict DNSSEC — retrying with DNSSEC=allow-downgrade (TLS still protects every query)"
-    sed -i 's/^DNSSEC=yes/DNSSEC=allow-downgrade/' /etc/systemd/resolved.conf.d/10-cloudflare-dot.conf
+    sed -i 's/^DNSSEC=yes/DNSSEC=allow-downgrade/' /etc/systemd/resolved.conf.d/10-encrypted-dns.conf
     systemctl restart systemd-resolved
     for _ in {1..20}; do resolvectl query archlinux.org &>/dev/null && break; sleep 1; done
 fi
 if ! resolvectl query archlinux.org &>/dev/null; then
-    rm -f /etc/systemd/resolved.conf.d/10-cloudflare-dot.conf; systemctl restart systemd-resolved
+    rm -f /etc/systemd/resolved.conf.d/10-encrypted-dns.conf; systemctl restart systemd-resolved
     die "Encrypted DNS does not work on this network — reverted to normal DNS so you stay online."
 fi
 ok "DNS over TLS works"

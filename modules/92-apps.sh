@@ -22,7 +22,7 @@ cat >"$CFG/gammastep/config.ini" <<CONF
 location-provider=manual
 adjustment-method=wayland
 temp-day=6500
-temp-night=4000
+temp-night=$([[ $NIGHT_LIGHT == y ]] && echo 4000 || echo 6500)
 fade=1
 
 [manual]
@@ -32,36 +32,51 @@ CONF
 ok "gammastep uses fixed coordinates ($LAT, $LON) — geoclue not installed, nothing is sent anywhere"
 [[ -n ${LAT:-} ]] || warn "No coordinates for timezone '$TZNAME' — set lat/lon in $CFG/gammastep/config.ini for correct night-light times"
 
-section "Weather (fixed city, no IP geolocation) + idle: lock after 10 min, no auto-sleep"
+ok "Night light toggle: SUPER+SHIFT+N or the moon button in the bottom-right panel"
+[[ $NIGHT_LIGHT == y ]] || { pkill -x gammastep 2>/dev/null || true; }
+
+section "Weather (fixed city, no IP geolocation) + idle: lock ${IDLE_LOCK_MIN}m, sleep ${IDLE_SLEEP_MIN}m (0 = never)"
 SHELLCFG=$CFG/caelestia/shell.json
-python3 -I - "$SHELLCFG" "$CITY" <<'PY'
+python3 -I - "$SHELLCFG" "$CITY" "$IDLE_LOCK_MIN" "$IDLE_SLEEP_MIN" <<'PY'
 import json, sys, pathlib
 p, city = pathlib.Path(sys.argv[1]), sys.argv[2]
 d = json.loads(p.read_text()) if p.exists() and p.read_text().strip() else {}
 d.setdefault("services", {})["weatherLocation"] = city
-# Idle: lock after 10 minutes; never turn screens off or sleep on its own
+# Idle: your choices (0 = never). Screens are never switched off on their own
 # (some monitors don't come back from standby). Closing a laptop lid still sleeps.
+lock_min, sleep_min = int(sys.argv[3]), int(sys.argv[4])
+timeouts = []
+if lock_min:
+    timeouts.append({"timeout": lock_min * 60, "idleAction": "lock"})
+if sleep_min:
+    timeouts.append({"timeout": sleep_min * 60, "idleAction": ["systemctl", "suspend"]})
 idle = d.setdefault("general", {}).setdefault("idle", {})
-idle.update({"lockBeforeSleep": True, "inhibitWhenAudio": True,
-             "timeouts": [{"timeout": 600, "idleAction": "lock"}]})
+idle.update({"lockBeforeSleep": True, "inhibitWhenAudio": True, "timeouts": timeouts})
+# Bottom-right quick toggles: night light + VPN in, Wi-Fi + Bluetooth out (they live in the bar).
+# The VPN button appears once a VPN is added with arch-setup-vpn.
+order = ["nightLight", "vpn", "mic", "gameMode", "dnd", "settings"]
+d.setdefault("utilities", {})["quickToggles"] = [{"id": t, "enabled": True} for t in order] + \
+    [{"id": t, "enabled": False} for t in ("wifi", "bluetooth")]
 p.parent.mkdir(parents=True, exist_ok=True)
 p.write_text(json.dumps(d, indent=4))
 PY
 ok "Weather city: $CITY (change in Caelestia settings or $SHELLCFG)"
 
-section "LibreWolf + CaelestiaFox"
-find_profile_root() { for r in "$HOME/.librewolf" "$CFG/librewolf/librewolf" "$CFG/librewolf"; do [[ -f $r/profiles.ini ]] && { echo "$r"; return; }; done; }
+section "$BROWSER + CaelestiaFox"
+if [[ $BROWSER == firefox ]]; then CANDIDATES=("$HOME/.mozilla/firefox" "$CFG/mozilla/firefox")
+else CANDIDATES=("$HOME/.librewolf" "$CFG/librewolf/librewolf" "$CFG/librewolf"); fi
+find_profile_root() { for r in "${CANDIDATES[@]}"; do [[ -f $r/profiles.ini ]] && { echo "$r"; return; }; done; }
 ROOT=$(find_profile_root || true)
 if [[ -z $ROOT ]]; then
-    librewolf --headless --no-remote about:blank &>/dev/null & pid=$!
+    "$BROWSER" --headless --no-remote about:blank &>/dev/null & pid=$!
     for _ in {1..60}; do ROOT=$(find_profile_root || true); [[ -n $ROOT ]] && break; sleep 0.5; done
     sleep 2; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
 fi
-[[ -n $ROOT ]] || die "Could not create a LibreWolf profile"
+[[ -n $ROOT ]] || die "Could not create a $BROWSER profile"
 PROFILE=$(awk -F= '/^\[Install/{i=1} i&&/^Default=/{print $2; exit}' "$ROOT/profiles.ini")
 [[ -n $PROFILE ]] || PROFILE=$(awk -F= '/^Path=/{print $2; exit}' "$ROOT/profiles.ini")
 P=$ROOT/$PROFILE
-[[ -d $P ]] || die "LibreWolf profile dir $P not found"
+[[ -d $P ]] || die "$BROWSER profile dir $P not found"
 ok "Profile: $P"
 
 install -D -m 0644 "$DOTS/firefox/userChrome.css" "$P/chrome/userChrome.css"
@@ -71,7 +86,7 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 user_pref("extensions.autoDisableScopes", 14);
 CONF
 set_block "$P/user.js" perf <<'CONF'
-// GPU video decoding on NVIDIA (libva-nvidia-driver); content sandbox stays on
+// GPU video decoding (VA-API: NVIDIA via libva-nvidia-driver, AMD/Intel via Mesa); sandbox stays on
 user_pref("media.ffmpeg.vaapi.enabled", true);
 user_pref("media.hardware-video-decoding.force-enabled", true);
 user_pref("widget.dmabuf.force-enabled", true);
@@ -107,8 +122,9 @@ if [[ ! -f $XPI ]]; then
     mv "$XPI.tmp" "$XPI"
 fi
 ok "CaelestiaFox add-on installed and verified (browser recolours live with your scheme)"
-xdg-settings set default-web-browser librewolf.desktop 2>/dev/null && ok "LibreWolf is the default browser"
+xdg-settings set default-web-browser "$BROWSER.desktop" 2>/dev/null && ok "$BROWSER is the default browser"
 
+if [[ $WANT_SPOTIFY == y ]]; then
 section "Spotify + Spicetify (recolours with your scheme)"
 install -D -m 0644 "$DOTS/spicetify/Themes/caelestia/user.css" "$CFG/spicetify/Themes/caelestia/user.css"
 install -D -m 0755 /dev/stdin "$HOME/.local/bin/spotify-themed" <<'SH'
@@ -140,6 +156,9 @@ sed -e "s|^Exec=.*|Exec=$HOME/.local/bin/spotify-themed %U|" /usr/share/applicat
     >"$HOME/.local/share/applications/spotify-launcher.desktop"
 ok "Spotify opens through spotify-themed (first launch downloads Spotify, then restarts themed)"
 
+fi
+
+if [[ $WANT_DISCORD == y ]]; then
 section "Vesktop (Discord)"
 VS=$CFG/vesktop/settings/settings.json
 if [[ ! -f $VS ]]; then
@@ -156,6 +175,8 @@ if "caelestia.theme.css" not in t: t.append("caelestia.theme.css")
 json.dump(d, open(p, "w"), indent=4)
 PY
     ok "Caelestia theme enabled in existing Vesktop settings"
+fi
+
 fi
 
 section "Shortcuts to the HDD"

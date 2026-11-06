@@ -162,7 +162,7 @@ if [[ -n $ANSWERS ]]; then
 fi
 
 # ------------------------------------------------------------------ questions
-section "1/6  Keyboard, language, time"
+section "1/7  Keyboard, language, time"
 echo "  Common keyboards: us · uk · de · fr · es · it · trq (Turkish Q) · trf (Turkish F) · ru · pl · br-abnt2"
 while :; do
     ask KEYMAP "Console keyboard layout" "us"
@@ -209,7 +209,7 @@ ask WEATHER_CITY "City for the weather widget (no location tracking)" "$d_city"
 ask MIRROR_COUNTRIES "Countries for package mirrors, comma-separated (empty = worldwide)" ""
 [[ $MIRROR_COUNTRIES =~ ^[A-Za-z\ ,]*$ ]] || die "Invalid country list"
 
-section "2/6  You"
+section "2/7  You"
 while :; do
     ask HOSTNAME_ "Computer name" "arch"
     [[ $HOSTNAME_ =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] && break
@@ -225,7 +225,7 @@ ask_secret PASSWORD "Password" 8
 (( ${#PASSWORD} < 12 )) && warn "Short password (${#PASSWORD} characters). 12+ is strongly recommended if it also protects your disks."
 ask_yn LOCK_ROOT "Lock the root account? (admin only through sudo — recommended)" y
 
-section "3/6  Graphics + processor"
+section "3/7  Graphics + processor"
 lspci -nn 2>/dev/null | grep -Ei 'VGA|3D|Display' | sed 's/^/  /' || true
 GPU=${GPU_FORCE:-$(detect_gpu)}
 if [[ $GPU == nvidia* && -z ${GPU_FORCE:-} ]]; then
@@ -251,7 +251,7 @@ case $(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}') in
 esac
 ok "GPU: $GPU · CPU microcode: ${UCODE:-none}"
 
-section "4/6  System disk"
+section "4/7  System disk"
 echo "  Disks in this computer (the USB you booted from is hidden):"; echo
 mapfile -t DISKS < <(list_disks)
 (( ${#DISKS[@]} )) || die "No disks found"
@@ -299,7 +299,7 @@ if [[ $ENCRYPT == y ]]; then
 fi
 [[ $LUKS_SAME == y ]] && LUKS_PASS=$PASSWORD
 
-section "5/6  Extra data disk (optional)"
+section "5/7  Extra data disk (optional)"
 DATA_DISK=""; VPART=""; : "${DATA_DEV:=}" "${BRIDGE_GIB:=0}" "${DATA_KEEP_GIB:=0}"
 others=(); for d in "${DISKS[@]}"; do [[ $d != "$DISK" ]] && others+=("$d"); done
 if (( ${#others[@]} )); then
@@ -322,7 +322,7 @@ else
     info "Only one disk — skipping"
 fi
 
-section "6/6  Boot menu lock"
+section "6/7  Boot menu lock"
 echo "  Lock the GRUB menu with your password: normal boot stays automatic; editing boot"
 echo "  entries, the GRUB console and booting snapshots need the password."
 ask_yn GRUB_LOCK "Lock the boot menu?" y
@@ -330,6 +330,38 @@ if [[ $GRUB_LOCK == y && $PASSWORD =~ [^a-hj-zA-HJ-Z0-9] && $XKB_LAYOUT != us ]]
     warn "GRUB always uses a US keyboard. Your password has characters that sit on other keys there —"
     warn "at the GRUB prompt, press the keys where those characters are on a US keyboard."
 fi
+
+section "7/7  Apps & preferences (Enter = recommended)"
+if [[ -d /sys/class/power_supply ]] && compgen -G "/sys/class/power_supply/BAT*" >/dev/null; then LAPTOP=y; else LAPTOP=n; fi
+pick() {           # pick VAR "Question" default option1 option2 ...
+    local __v=$1 q=$2 d=$3; shift 3
+    while :; do
+        ask "$__v" "$q ($(IFS=/; echo "$*"))" "$d"
+        local o; for o in "$@"; do [[ ${!__v} == "$o" ]] && return; done
+        warn "Choose one of: $*"; [[ -n $ANSWERS ]] && die "bad $__v"
+    done
+}
+pick BROWSER "Web browser" librewolf librewolf firefox
+ask_yn WANT_SPOTIFY "Spotify (themed to match your desktop)?" y
+ask_yn WANT_DISCORD "Discord (Vesktop, themed)?" y
+pick DEV_TOOLS "Developer tools: full = Python, Rust, C/C++, Node, Code-OSS, Neovim · basic = git + Neovim" full full basic none
+ask_yn WANT_GAMING "Gaming: Steam, GameMode, MangoHud, 32-bit drivers?" n
+ask_yn WANT_EXTRAS "Extra apps: mpv (video), OBS (recording), LibreOffice, image viewer?" n
+ask_yn WANT_FLATPAK "Flatpak + Flathub (app store for sandboxed apps)?" n
+ask_yn WANT_BLUETOOTH "Bluetooth?" "$LAPTOP"
+ask_yn WANT_PRINTING "Printer support?" n
+ask_yn WANT_LTS "Backup kernel (linux-lts) in the boot menu, in case an update breaks the main one?" y
+pick START_SCHEME "Starting colour scheme (change any time with SUPER)" autumn-forest autumn-forest nocturne cream catppuccin gruvbox rosepine tokyonight nord
+pick DNS_PROVIDER "Encrypted DNS provider" cloudflare cloudflare quad9 mullvad
+ask_yn NIGHT_LIGHT "Night light: warmer screen colours in the evening (toggle any time: pkill -USR1 gammastep)?" y
+while :; do
+    ask IDLE_LOCK_MIN "Lock the screen after how many idle minutes (0 = never)" 10
+    [[ $IDLE_LOCK_MIN =~ ^[0-9]+$ ]] && break; warn "A number"; [[ -n $ANSWERS ]] && die "bad IDLE_LOCK_MIN"
+done
+while :; do
+    ask IDLE_SLEEP_MIN "Sleep after how many idle minutes (0 = never; some monitors don't wake well)" "$([[ $LAPTOP == y ]] && echo 30 || echo 0)"
+    [[ $IDLE_SLEEP_MIN =~ ^[0-9]+$ ]] && break; warn "A number"; [[ -n $ANSWERS ]] && die "bad IDLE_SLEEP_MIN"
+done
 
 # ------------------------------------------------------------------ summary
 section "Summary"
@@ -352,6 +384,9 @@ cat <<EOF
   Encryption ...... $ROOT_ENCRYPTED$([[ $ROOT_ENCRYPTED == yes ]] && { [[ $LUKS_SAME == y ]] && echo " (login password)" || echo " (separate password)"; })
   Data disk ....... $data_txt
   Boot menu lock .. $GRUB_LOCK
+  Apps ............ browser $BROWSER · spotify $WANT_SPOTIFY · discord $WANT_DISCORD · dev $DEV_TOOLS · gaming $WANT_GAMING · extras $WANT_EXTRAS · flatpak $WANT_FLATPAK
+  System .......... bluetooth $WANT_BLUETOOTH · printing $WANT_PRINTING · backup kernel $WANT_LTS · DNS $DNS_PROVIDER
+  Look + idle ..... theme $START_SCHEME · night light $NIGHT_LIGHT · lock ${IDLE_LOCK_MIN}m · sleep $([[ $IDLE_SLEEP_MIN == 0 ]] && echo never || echo "${IDLE_SLEEP_MIN}m")
 EOF
 if [[ -z $ANSWERS ]]; then
     read -r -p "  Everything correct? Type yes to continue: " a </dev/tty
@@ -455,7 +490,11 @@ case $GPU in
     intel)         GPU_PKGS=(mesa vulkan-intel intel-media-driver) ;;
     *)             GPU_PKGS=(mesa) ;;
 esac
-BASE=(base linux linux-firmware $UCODE btrfs-progs cryptsetup dosfstools exfatprogs networkmanager
+if [[ $WANT_LTS == y ]]; then
+    LTS_PKGS=(linux-lts)
+    [[ $GPU == nvidia* ]] && LTS_PKGS+=(nvidia-open-lts)
+else LTS_PKGS=(); fi
+BASE=(base linux linux-firmware "${LTS_PKGS[@]}" $UCODE btrfs-progs cryptsetup dosfstools exfatprogs networkmanager
       grub efibootmgr os-prober sudo nano git base-devel python reflector pciutils "${GPU_PKGS[@]}")
 for p in "${BASE[@]}"; do pacman -Si "$p" >/dev/null 2>&1 || die "Package '$p' not found in the Arch repos"; done
 pacstrap -K "$MNT" "${BASE[@]}"
@@ -481,6 +520,21 @@ MIRROR_COUNTRIES="$MIRROR_COUNTRIES"
 GPU=$GPU
 ROOT_ENCRYPTED=$ROOT_ENCRYPTED
 DATA_DISK=$DATA_DISK
+BROWSER=$BROWSER
+WANT_SPOTIFY=$WANT_SPOTIFY
+WANT_DISCORD=$WANT_DISCORD
+DEV_TOOLS=$DEV_TOOLS
+WANT_GAMING=$WANT_GAMING
+WANT_EXTRAS=$WANT_EXTRAS
+WANT_FLATPAK=$WANT_FLATPAK
+WANT_BLUETOOTH=$WANT_BLUETOOTH
+WANT_PRINTING=$WANT_PRINTING
+WANT_LTS=$WANT_LTS
+START_SCHEME=$START_SCHEME
+DNS_PROVIDER=$DNS_PROVIDER
+IDLE_LOCK_MIN=$IDLE_LOCK_MIN
+IDLE_SLEEP_MIN=$IDLE_SLEEP_MIN
+NIGHT_LIGHT=$NIGHT_LIGHT
 EOF
 chmod 0644 "$MNT/etc/arch-setup/install.conf"
 
@@ -551,7 +605,7 @@ shred -u "$KF" 2>/dev/null; KF=""
 # ------------------------------------------------------------------ modules
 section "Copying arch-setup into the new system"
 rsync -a --delete --exclude .git --exclude logs --exclude '__pycache__' --exclude scripts "$SETUP_DIR/" "$MNT/opt/arch-setup/"
-chown -R root:root "$MNT/opt/arch-setup"; chmod -R go-w "$MNT/opt/arch-setup"
+chown -R root:root "$MNT/opt/arch-setup"; chmod -R u=rwX,go=rX "$MNT/opt/arch-setup"   # readable by everyone, writable by root only
 
 run_in() {   # run_in root|user MODULE
     local as=$1 m=$2
@@ -567,7 +621,7 @@ run_in() {   # run_in root|user MODULE
 }
 install -d -m 0755 "$MNT/var/log/arch-setup"
 arch-chroot "$MNT" install -o "$USERNAME" -m 0666 /dev/null /var/log/arch-setup/warnings.txt
-for m in 10-base 20-network 30-firewall 40-hardening 50-performance 60-storage 70-snapshots 80-login; do run_in root "$m"; done
+for m in 10-base 20-network 30-firewall 40-hardening 50-performance 55-gaming 60-storage 70-snapshots 80-login; do run_in root "$m"; done
 run_in user 90-aur
 run_in root 99-finalize
 
