@@ -4,6 +4,31 @@ One command turns a computer into a secure, private and fast **Arch Linux** desk
 **Hyprland** and the **Caelestia** shell. It runs from the official Arch ISO, asks a few
 questions, and never touches a disk you didn't name.
 
+> **Personal, non-commercial project.** Made by a student (Zhanius) to learn Linux and to set up
+> my own PC and a friend's. It is **not affiliated with, endorsed by, or supported by** the
+> Caelestia authors (caelestia-dots) or Arch Linux. All credit for the Caelestia shell, its
+> design and its dotfiles goes to them. This project only automates installing their software
+> from its official sources and configures it. Please report problems with this installer
+> **here, not to Caelestia**. No warranty: use it at your own risk, and back up your data.
+>
+> If you are an author of any software used here and want something changed, credited
+> differently or removed, please open an issue and it will be done.
+
+## Credits
+
+- **[Caelestia](https://github.com/caelestia-dots)** by caelestia-dots: the shell
+  ([caelestia-dots/shell](https://github.com/caelestia-dots/shell)), CLI and dotfiles
+  ([caelestia-dots/caelestia](https://github.com/caelestia-dots/caelestia)). For Caelestia
+  itself, see their repositories and community.
+- **[Arch Linux](https://archlinux.org)**, **[Hyprland](https://hypr.land)**,
+  **[Quickshell](https://quickshell.org)** and every package author whose work is installed.
+- Wallpaper photographers on Wikimedia Commons (credited in each wallpaper folder).
+
+Not copied into this repository: none of their code, art or dotfiles. Everything is downloaded
+from the original sources at install time. The single exception is a small patch to
+caelestia-shell (a night-light quick toggle, see `vetted/patches/`). It is licensed under the
+same **GPL-3.0** as caelestia-shell and applied only when the package is built on your own PC.
+
 ## What you get
 
 - **Private by default:** encrypted DNS (DNS-over-TLS + DNSSEC) with no fallback to your
@@ -153,5 +178,6 @@ Commits and pushes go through `.githooks/` (`git config core.hooksPath .githooks
 
 ## License
 
-MIT for this project's own code. See [LICENSE](LICENSE) and
+MIT for this project's own code, except `vetted/patches/caelestia-shell/` (GPL-3.0-only,
+because it modifies caelestia-shell). See [LICENSE](LICENSE) and
 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the software and photos it downloads.

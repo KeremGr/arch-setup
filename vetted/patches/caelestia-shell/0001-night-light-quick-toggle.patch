@@ -1,3 +1,9 @@
+SPDX-License-Identifier: GPL-3.0-only
+Night-light quick toggle for caelestia-shell (Utilities > Quick toggles).
+Modifies caelestia-shell by caelestia-dots (https://github.com/caelestia-dots/shell), which is
+licensed GPL-3.0-only; this patch is distributed under the same license. Personal,
+non-commercial project; not affiliated with or endorsed by the Caelestia authors.
+
 --- a/modules/utilities/cards/Toggles.qml
 +++ b/modules/utilities/cards/Toggles.qml
 @@ -2,6 +2,8 @@
